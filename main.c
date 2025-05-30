@@ -18,8 +18,13 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "dma.h"
 #include "tim.h"
+#include "usart.h"
 #include "gpio.h"
+#include "bsp_usart.h"
+#include "math.h"
+#include <string.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -44,7 +49,8 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+uint8_t rx_buffer[10];
+int a=0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -55,21 +61,25 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-
-int mode=1;
-
-void turn_on()
+void Serialplot_Call_Back(uint8_t *Buffer, uint16_t Length)
 {
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_12, GPIO_PIN_RESET);
-	HAL_Delay(10);
+	
+	if (rx_buffer[0] == '0')
+    {
+      
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_12, GPIO_PIN_SET); 
+    }
+    else if (rx_buffer[0] == '1')
+    {
+      
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_12, GPIO_PIN_RESET);
+    }
+	else if (rx_buffer[0] == '2')
+	{
+	
+		HAL_GPIO_TogglePin(GPIOA,GPIO_PIN_12);
+	}
 }
-void turn_off()
-{
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_12, GPIO_PIN_SET);
-	HAL_Delay(10);
-}
-
 
 /* USER CODE END 0 */
 
@@ -81,7 +91,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -102,20 +112,52 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
+  MX_USART1_UART_Init();
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
-  
-  HAL_TIM_Base_Start_IT(&htim1);
-  
+Uart_Init(&huart1,rx_buffer,10,Serialplot_Call_Back);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
+
+
+static uint16_t flag = 0;
+// 定义一个常量，表示一个完整的正弦波周期由多少个点组成
+const uint16_t STEPS_PER_CYCLE = 200;
+
+//将计步器'flag'转换为弧度'angle'
+float angle = ((float)flag / (float)STEPS_PER_CYCLE) * 6.28318f;
+
+// 计算正弦
+float sin_value = sin(angle);
+ 
+float led_status;
+led_status = !HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_12);
+static uint8_t tx_buffer[9]; // 定义为静态，以配合DMA安全发送
+tx_buffer[0] = 0xAB; // 帧头
+
+// 使用 memcpy 复制字节
+memcpy(&tx_buffer[1], &sin_value, 4); // 通道1: sin
+memcpy(&tx_buffer[5], &led_status, 4); // 通道2: cos
+
+//发送数据
+
+UART_Send_Data(&huart1, tx_buffer, 9);
+
+// 更新计数器
+flag++;
+if (flag >= STEPS_PER_CYCLE)
+{
+    flag = 0; 
+}
+
+// 6. 延时，控制波形生成的整体速度
+HAL_Delay(10); 
   }
   /* USER CODE END 3 */
 }
@@ -160,36 +202,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-	if(htim==&htim1 && mode==1)
-	{	
-		
-				HAL_GPIO_TogglePin(GPIOA,GPIO_PIN_12);
 
-	}
-}
-
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-	if(mode==2)
-		{
-
-		switch(GPIO_Pin)
-			{
-				case GPIO_PIN_15:
-				{
-				HAL_GPIO_TogglePin(GPIOA,GPIO_PIN_12);
-				}break;
-				default:break;
-			}
-
-		}
-	else{
-		
-		}	
-	
-}
 /* USER CODE END 4 */
 
 /**
@@ -201,10 +214,9 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
-while (1)
-{
-	
-}
+  while (1)
+  {
+  }
   /* USER CODE END Error_Handler_Debug */
 }
 
